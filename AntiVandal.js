@@ -1,3 +1,5 @@
+/* <nowiki> */
+
 let antiVandalOptions = {
 	// maximum number of items in the queue
 	maxQueueSize: 50,
@@ -104,7 +106,7 @@ const warnings = {
 
 let currentId = null, currentEdit = null, rcstart = null, messageTimeout = null;
 let lastRevId = 0;
-let queueItems = [];
+let queueItems = [], pastQueueItems = [];
 const antiVandalApi = new mw.Api();
 
 let currentAIVReports = [];
@@ -122,7 +124,7 @@ async function runAntiVandal() {
 
 	const username = mw.config.values.wgUserName;
 	const registeredDate = new Date(mw.config.values.wgUserRegistration);
-	const editCount = mw.config.values.wgEditCount;
+	const editCount = mw.config.values.wgUserEditCount;
 	const userGroups = mw.config.values.wgUserGroups;
 
 	let allowed = false;
@@ -248,6 +250,19 @@ function startInterface() {
 		renderQueue();
 	}
 
+	qs("#queueBack").onclick = () => {
+		if (pastQueueItems.length === 0) {
+			return;
+		}
+		queueItems.unshift(pastQueueItems.pop());
+		renderQueue();
+	}
+
+	qs("#queueForward").onclick = () => {
+		shiftQueue();
+		return;
+	}
+
 	qs(".settingsClose").onclick = hideSettings;
 	qs(".settingsCancel").onclick = hideSettings;
 
@@ -316,6 +331,7 @@ async function fetchRecentChanges() {
 	try {
 		if (queueItems.length >= antiVandalOptions.maxQueueSize) {
 			renderQueue();
+			window.setTimeout(() => fetchRecentChanges(), antiVandalOptions.refreshTime);
 			return;
 		}
 	
@@ -389,7 +405,7 @@ async function fetchRecentChanges() {
 				warnLevels[username] = "0";
 				continue;
 			}
-	
+
 			warnLevels[username] = getWarningLevel(talkPageData[item].revisions[0].slots.main.content);
 		}
 	
@@ -731,7 +747,10 @@ function padString(str, len) {
 
 // delete the first item from the queue
 function shiftQueue() {
-	queueItems.shift();
+	pastQueueItems.push(queueItems.shift());
+	if (pastQueueItems.length > 10) {
+		pastQueueItems.shift();
+	}
 	renderQueue();
 }
 
@@ -983,6 +1002,8 @@ function createInterface() {
 					<h2 class="sectionHeading">Queue</h2>
 					<!-- <span class="fas fa-gear queueControl" id="settings" title="Settings"></span> -->
 					<span class="fas fa-trash-can queueControl" id="queueDelete" title="Remove all items from queue"></span>
+					<span class="fas fa-arrow-right queueControl" id="queueForward" title="Go to next edit"></span>
+					<span class="fas fa-arrow-left queueControl" id="queueBack" title="Go to previous edit"></span>
 				</div>
 				<div class="queueItemsContainer"></div>
 				<div class="queueStatusContainer">
@@ -1364,7 +1385,7 @@ function createInterface() {
 				display: flex;
 				align-items: center;
 				border-top: 1px solid #ccc;
-				width: calc(100% - 600px);
+				width: calc(100% - 602px);
 			}
 
 			.diffActionItem {
@@ -1608,6 +1629,16 @@ function createInterface() {
 			#user-being-reported, #report-notice {
 				font-size: 0.8em;
 			}
+
+			@media screen and (max-width: 1200px) {
+				.diffActionContainer {
+					width: calc(50% - 2px);
+				}
+
+				.diffToolbar {
+					width: calc(75%);
+				}
+			}
 		</style>
 	`;
 }
@@ -1808,3 +1839,5 @@ function reportCurrentUser() {
 }
 
 runAntiVandal();
+
+/* </nowiki> */
