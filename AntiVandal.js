@@ -280,6 +280,20 @@ function startInterface() {
 	qs("#report-reason").onfocus = () => qs("#other-reason").checked = true;
 	qs(".report-button").onclick = reportCurrentUser;
 
+	qs("#revert-button").onclick = () => {
+		const summary = qs("#revert-summary").value;
+		revert({ id: currentId, summary: summary }, true);
+		shiftQueue();
+
+		for (let e of [...document.querySelectorAll(".diffActionBox")]) {
+			e.style.display = "none";
+		}
+
+		for (let e of [...document.querySelectorAll(".diffActionItem")]) {
+			e.style.background = "";
+		}
+	}
+
 	for (let item in warnings) {
 		const templates = document.createElement("tr");
 		let html = `<td><span class="diffWarningLabel">${item}</span></td>`;
@@ -489,7 +503,7 @@ async function addQueueItem(change, editcount, warnLevel) {
 	} catch (err) {}
 }
 
-async function revert(data) {
+async function revert(data, toWarn) {
 	qs(".diffProgressContainer").innerHTML += `
 		<div class="diffProgressBar" id="revert-${data.id}">
 			<div class="diffProgressBarOverlay"></div>
@@ -565,93 +579,97 @@ async function revert(data) {
 		qs(overlayId).style.width = "25%";
 		qs(textId).innerText = "Reverting...";
 
+		const summary = `Reverted edits by [[Special:Contributions/${revision.user}|${revision.user}]] ([[User talk:${revision.user}|talk]])${data.summary ? ": " + data.summary : ""} ([[User:Ingenuity/AntiVandal|AV]])`;
+
 		const response = await antiVandalApi.post({
 			action: "edit",
 			format: "json",
 			pageid: pageId,
 			baserevid: data.id,
-			summary: `Reverted edits by [[Special:Contributions/${revision.user}|${revision.user}]] ([[User talk:${revision.user}|talk]]) ([[User:Ingenuity/AntiVandal|AV]])`,
+			summary: summary,
 			text: content,
 			token: await getCSRFToken(),
 			nocreate: 1
 		});
 
-		if (response.error || response.edit.result !== "Success") {
-			qs(overlayId).style.background = "rgb(255, 60, 60)";
-			qs(overlayId).style.width = "100%";
-			qs(textId).innerText = "Edit conflict";
-			hideProgressBar(progressBarId);
-			return;
-		}
-
-		qs(overlayId).style.width = "50%";
-		qs(textId).innerText = "Getting talk...";
-
-		const talkPage = (await antiVandalApi.get({
-			action: "query",
-			format: "json",
-			formatversion: 2,
-			prop: "revisions",
-			rvprop: "content",
-			titles: "User_talk:" + revision.user
-		})).query.pages;
-
-		qs(overlayId).style.width = "75%";
-		qs(textId).innerText = "Warning...";
-
-		let createNewSection = false, talkContent = "", newContent = "";
-
-		if (typeof Object.values(talkPage)[0].missing !== "undefined") {
-			createNewSection = true;
-		} else {
-			talkContent = Object.values(talkPage)[0].revisions[0].content;
-			if (talkContent.match(new RegExp("== ?" + getMonthSectionName() + " ?==")) === null) {
-				createNewSection = true;
+		if (!toWarn) {
+			if (response.error || response.edit.result !== "Success") {
+				qs(overlayId).style.background = "rgb(255, 60, 60)";
+				qs(overlayId).style.width = "100%";
+				qs(textId).innerText = "Edit conflict";
+				hideProgressBar(progressBarId);
+				return;
 			}
-		}
 
-		const warnLevel = getWarningLevel(talkContent);
+			qs(overlayId).style.width = "50%";
+			qs(textId).innerText = "Getting talk...";
 
-		if (warnLevel === "4" || warnLevel === "4im") {
-			newMessage("User is already at level 4 warning");
-			qs(overlayId).style.width = "100%";
-			qs(textId).innerText = "Done";
-			hideProgressBar(progressBarId);
-			return;
-		}
+			const talkPage = (await antiVandalApi.get({
+				action: "query",
+				format: "json",
+				formatversion: 2,
+				prop: "revisions",
+				rvprop: "content",
+				titles: "User_talk:" + revision.user
+			})).query.pages;
 
-		let warnTemplate;
+			qs(overlayId).style.width = "75%";
+			qs(textId).innerText = "Warning...";
 
-		if (data.template === "auto") {
-			warnTemplate = "{{subst:uw-vandalism" + (Number(warnLevel) + 1) + "|" + title + "}} ~~" + "~~";
-		} else {
-			warnTemplate = "{{" + data.template.wikitext + "|" + title + "}}" + " ~~" + "~~";
-		}
+			let createNewSection = false, talkContent = "", newContent = "";
 
-		if (createNewSection) {
-			newContent = talkContent + "\n== " + getMonthSectionName() + " ==\n\n" + warnTemplate;
-		} else {
-			const sections = talkContent.split(/(?=== ?[\w\d ]+ ?==)/g);
-
-			for (let section in sections) {
-				if (sections[section].match(new RegExp("== ?" + getMonthSectionName() + " ?==")) !== null) {
-					sections[section] += "\n\n" + warnTemplate + "\n";
+			if (typeof Object.values(talkPage)[0].missing !== "undefined") {
+				createNewSection = true;
+			} else {
+				talkContent = Object.values(talkPage)[0].revisions[0].content;
+				if (talkContent.match(new RegExp("== ?" + getMonthSectionName() + " ?==")) === null) {
+					createNewSection = true;
 				}
 			}
 
-			newContent = sections.join("");
+			const warnLevel = getWarningLevel(talkContent);
+
+			if (warnLevel === "4" || warnLevel === "4im") {
+				newMessage("User is already at level 4 warning");
+				qs(overlayId).style.width = "100%";
+				qs(textId).innerText = "Done";
+				hideProgressBar(progressBarId);
+				return;
+			}
+
+			let warnTemplate;
+
+			if (data.template === "auto") {
+				warnTemplate = "{{subst:uw-vandalism" + (Number(warnLevel) + 1) + "|" + title + "}} ~~" + "~~";
+			} else {
+				warnTemplate = "{{" + data.template.wikitext + "|" + title + "}}" + " ~~" + "~~";
+			}
+
+			if (createNewSection) {
+				newContent = talkContent + "\n== " + getMonthSectionName() + " ==\n\n" + warnTemplate;
+			} else {
+				const sections = talkContent.split(/(?=== ?[\w\d ]+ ?==)/g);
+
+				for (let section in sections) {
+					if (sections[section].match(new RegExp("== ?" + getMonthSectionName() + " ?==")) !== null) {
+						sections[section] += "\n\n" + warnTemplate + "\n";
+					}
+				}
+
+				newContent = sections.join("");
+			}
+
+			newContent = newContent.replaceAll("\n\n\n", "\n\n");
+
+			await antiVandalApi.post({
+				action: "edit",
+				format: "json",
+				title: "User_talk:" + revision.user,
+				summary: `Message about your edit on [[${title}]] (level ${(data.template.level || Number(warnLevel)) + 1}) ([[User:Ingenuity/AntiVandal|AV]])`,
+				text: newContent,
+				token: await getCSRFToken()
+			});
 		}
-
-		newContent = newContent.replaceAll("\n\n\n", "\n\n");
-
-		await antiVandalApi.post({
-			action: "edit",
-			format: "json",
-			title: "User_talk:" + revision.user,
-			summary: `Message about your edit on [[${title}]] (level ${(data.template.level || Number(warnLevel)) + 1}) ([[User:Ingenuity/AntiVandal|AV]])`,
-			text: newContent,
-			token: await getCSRFToken()
-		});
 
 		qs(overlayId).style.width = "100%";
 		qs(textId).innerText = "Done";
@@ -685,6 +703,14 @@ function revertButton(template, level) {
 		}
 	});
 	shiftQueue();
+
+	for (let e of [...document.querySelectorAll(".diffActionBox")]) {
+		e.style.display = "none";
+	}
+
+	for (let e of [...document.querySelectorAll(".diffActionItem")]) {
+		e.style.background = "";
+	}
 }
 
 // get CSRF token used for making edits
@@ -1038,6 +1064,13 @@ function createInterface() {
 							<button class="report-button" disabled>Report</button><br><br>
 							<i id="user-being-reported">User being reported: N/A</i><br><br>
 							<i id="report-notice"></i>
+						</div>
+					</div>
+					<div class="diffActionItem">
+						Revert with summary
+						<div class="diffActionBox">
+							<input type="text" id="revert-summary" placeholder="Revert summary"><br>
+							<button id="revert-button">Revert</button>
 						</div>
 					</div>
 					<!-- <div class="diffActionItem">
