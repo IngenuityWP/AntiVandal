@@ -8,7 +8,9 @@ let antiVandalOptions = {
 	// hotkeys
 	controls: {
 		markAsVandalism: "q",
-		continueToNext: " "
+		continueToNext: " ",
+		queueBack: "[",
+		queueForward: "]"
 	},
 	// how often to load recent changes
 	refreshTime: 5000,
@@ -223,6 +225,20 @@ function startInterface() {
 	// add listener for hotkey presses
 	window.addEventListener("keyup", (event) => {
 		if (document.activeElement.nodeName.toLowerCase() === "input") {
+			return;
+		}
+
+		if (event.key.toLowerCase() === antiVandalOptions.controls.queueBack) {
+			if (pastQueueItems.length === 0) {
+				return;
+			}
+			queueItems.unshift(pastQueueItems.pop());
+			renderQueue();
+			return;
+		}
+
+		if (event.key.toLowerCase() === antiVandalOptions.controls.queueForward) {
+			shiftQueue();
 			return;
 		}
 
