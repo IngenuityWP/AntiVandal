@@ -8,7 +8,9 @@ let antiVandalOptions = {
 	// hotkeys
 	controls: {
 		markAsVandalism: "q",
-		continueToNext: " "
+		continueToNext: " ",
+		queueBack: "[",
+		queueForward: "]"
 	},
 	// how often to load recent changes
 	refreshTime: 5000,
@@ -223,6 +225,20 @@ function startInterface() {
 	// add listener for hotkey presses
 	window.addEventListener("keyup", (event) => {
 		if (document.activeElement.nodeName.toLowerCase() === "input") {
+			return;
+		}
+
+		if (event.key.toLowerCase() === antiVandalOptions.controls.queueBack) {
+			if (pastQueueItems.length === 0) {
+				return;
+			}
+			queueItems.unshift(pastQueueItems.pop());
+			renderQueue();
+			return;
+		}
+
+		if (event.key.toLowerCase() === antiVandalOptions.controls.queueForward) {
+			shiftQueue();
 			return;
 		}
 
@@ -465,7 +481,7 @@ async function addQueueItem(change, editcount, warnLevel) {
 			list: "usercontribs",
 			uclimit: 10,
 			ucuser: change.user,
-			ucprop: "title|timestamp|comment|sizediff|tags"
+			ucprop: "title|timestamp|comment|sizediff|tags|ids"
 		}));
 
 		const pageHistory = (await (antiVandalApi.get({
@@ -474,7 +490,7 @@ async function addQueueItem(change, editcount, warnLevel) {
 			prop: "revisions",
 			titles: change.title,
 			formatversion: 2,
-			rvprop: "comment|user|timestamp|tags",
+			rvprop: "comment|user|timestamp|tags|ids",
 			rvslots: "*",
 			rvlimit: 10
 		}))).query.pages[0].revisions;
@@ -905,7 +921,7 @@ function displayDiff(item) {
 			tagHTML = `<span class="queueItemTag">Reverted</span>`;
 		}
 		userContribsContainer.innerHTML += `
-			<div class="queueItem">
+			<div class="queueItem${con.revid === item.id ? ' currentQueueItem':''}">
 				<a class="infoItemTitle" href="${getPageLink(con.title, item.wiki)}" target="_blank" title="${con.title}">
 					<span class="fas fa-file-lines"></span>${con.title}
 				</a>
@@ -931,7 +947,7 @@ function displayDiff(item) {
 			tagHTML = `<span class="queueItemTag">Reverted</span>`;
 		}
 		pageHistoryContainer.innerHTML += `
-			<div class="queueItem">
+			<div class="queueItem${con.revid === item.id ? ' currentQueueItem':''}">
 				<a class="infoItemTitle" href="${getPageLink("Special:Contributions/" + con.user, item.wiki)}" target="_blank" title="${con.user}">
 					<span class="fas fa-user"></span>${con.user}
 				</a>
