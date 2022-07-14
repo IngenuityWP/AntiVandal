@@ -15,7 +15,9 @@ let antiVandalOptions = {
 	// how often to load recent changes
 	refreshTime: 5000,
 	// ignore users with over this number of edits
-	maxEditCount: 50
+	maxEditCount: 50,
+	// sort items in the queue by ORES score
+	sortQueueItems: true
 };
 
 // list of common warnings
@@ -420,8 +422,9 @@ async function fetchRecentChanges() {
 			rvprop: "content",
 			rvslots: "*"
 		}));
-	
+
 		if (typeof talkPageData.query === "undefined") {
+			window.setTimeout(() => fetchRecentChanges(), antiVandalOptions.refreshTime);
 			return;
 		}
 	
@@ -466,6 +469,18 @@ async function fetchRecentChanges() {
 
 // get diff, user contributions, and page history for each edit
 async function addQueueItem(change, editcount, warnLevel) {
+	for (let item of queueItems) {
+		if (item.id === change.revid) {
+			return;
+		}
+	}
+
+	for (let item of pastQueueItems) {
+		if (item.id === change.revid) {
+			return;
+		}
+	}
+
 	try {
 		const diff = await (antiVandalApi.get({
 			action: "compare",
@@ -495,6 +510,10 @@ async function addQueueItem(change, editcount, warnLevel) {
 			rvlimit: 10
 		}))).query.pages[0].revisions;
 
+		const ORES = await (await (fetch(`https://ores.wikimedia.org/v3/scores/enwiki/${change.revid}?models=damaging|goodfaith`))).json();
+		const results = ORES["enwiki"]["scores"][change.revid];
+		const score = (results["damaging"]["score"]["probability"]["true"] + results["goodfaith"]["score"]["probability"]["false"]) / 2;
+
 		const item = {
 			user: change.user,
 			editcount: editcount,
@@ -511,12 +530,23 @@ async function addQueueItem(change, editcount, warnLevel) {
 			usercontribs: usercontribs.query.usercontribs,
 			wiki: "en",
 			warnLevel: warnLevel,
-			pageHistory: pageHistory
+			pageHistory: pageHistory,
+			score: score
 		};
 
-		queueItems.push(item);
+		if (queueItems.length > 0 && antiVandalOptions.sortQueueItems) {
+			const firstItem = queueItems.shift();
+			queueItems.push(item);
+			queueItems.sort((a, b) => b.score - a.score);
+			queueItems.unshift(firstItem);
+		} else {
+			queueItems.push(item);
+		}
+
 		renderQueue();
-	} catch (err) {}
+	} catch (err) {
+		console.log(err);
+	}
 }
 
 async function revert(data, toWarn) {
@@ -790,7 +820,7 @@ function padString(str, len) {
 // delete the first item from the queue
 function shiftQueue() {
 	pastQueueItems.push(queueItems.shift());
-	if (pastQueueItems.length > 10) {
+	if (pastQueueItems.length > 20) {
 		pastQueueItems.shift();
 	}
 	renderQueue();
@@ -845,6 +875,24 @@ function renderQueueItem(item, isSelected) {
 		tagHTML += `<span class="queueItemTag">${tag}</span>`;
 	}
 
+	let OREScolor = "grey";
+	let title = "likely not vandalism";
+
+	if (item.score > 0.5) {
+		OREScolor = "yellow";
+		title = "possible vandalism";
+	}
+
+	if (item.score > 0.6) {
+		OREScolor = "orange";
+		title = "likely vandalism";
+	}
+
+	if (item.score > 0.65) {
+		OREScolor = "red";
+		title = "very likely vandalism";
+	}
+
 	queueContainer.innerHTML += `
 		<div class="queueItem${isSelected ? "" : " currentQueueItem"}">
 			<a class="queueItemTitle" href="${item.pageLink}" target="_blank" title="${item.title}">
@@ -859,6 +907,7 @@ function renderQueueItem(item, isSelected) {
 			<div class="queueItemTags">
 				${tagHTML}
 			</div>
+			<div class="ores ores-${OREScolor}" title="ORES score of ${Math.floor(item.score * 100) / 100}; ${title}"></div>
 		</div>
 	`;
 }
@@ -1677,6 +1726,27 @@ function createInterface() {
 
 			#user-being-reported, #report-notice {
 				font-size: 0.8em;
+			}
+
+			.ores {
+				height: 5px;
+				background: #ddd;
+				position: absolute;
+				top: calc(100% - 5px);
+				left: 0;
+				width: 100%;
+			}
+
+			.ores-red {
+				background: red;
+			}
+
+			.ores-orange {
+				background: orange;
+			}
+
+			.ores-yellow {
+				background: yellow;
 			}
 
 			@media screen and (max-width: 1200px) {
